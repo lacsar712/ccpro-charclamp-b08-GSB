@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -58,6 +58,18 @@ class Clamp(Base):
 
 class BurnShift(Base):
     __tablename__ = "burn_shifts"
+    __table_args__ = (
+        # 一口窑同时最多一条峰值为空（焖烧中、未测峰值）的班次。
+        # 数据库层兜底并发：两个事务同时插入时，只有一笔能成功，另一笔整笔回滚（无半插入）。
+        # postgresql_where / sqlite_where 各按方言取用；生产为 PostgreSQL，SQLite 分支供本地/测试。
+        Index(
+            "uq_burn_shift_open_per_clamp",
+            "clamp_id",
+            unique=True,
+            postgresql_where=text("peak_temp_c IS NULL"),
+            sqlite_where=text("peak_temp_c IS NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     clamp_id: Mapped[int] = mapped_column(ForeignKey("clamps.id"), nullable=False)

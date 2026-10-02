@@ -17,6 +17,26 @@ def latest_shift_for_clamp(clamp: Clamp) -> BurnShift | None:
     return max(clamp.shifts, key=lambda s: s.started_at)
 
 
+def has_open_peak_shift(clamp: Clamp) -> bool:
+    """该窑是否存在峰值温度仍为空（未测峰值、焖烧中）的班次。"""
+    return any(shift.peak_temp_c is None for shift in clamp.shifts)
+
+
+def assert_can_open_shift(clamp: Clamp) -> None:
+    """
+    再开焖烧班次的前提：该窑当前不得有峰值为空的班次。
+    一口窑同时最多一条「未测峰值」的焖烧班次。
+    """
+    if has_open_peak_shift(clamp):
+        latest = latest_shift_for_clamp(clamp)
+        when = latest.started_at.strftime("%Y-%m-%d %H:%M") if latest else ""
+        tail = f"（{when} 开的班仍未测峰值）" if when else ""
+        raise RuleError(
+            f"窑 {clamp.code} 已有一条峰值未测的焖烧班次{tail}，"
+            "禁止再开新班；请先补测该班峰值温度后再开。"
+        )
+
+
 def can_mark_clamp_drawn(clamp: Clamp) -> tuple[bool, str]:
     """
     炭窑转为「已出炭」(drawn) 的前提：

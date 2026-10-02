@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncGenerator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -27,6 +27,16 @@ SyncSessionLocal = sessionmaker(sync_engine, expire_on_commit=False, class_=Sess
 
 def sync_create_all() -> None:
     Base.metadata.create_all(sync_engine)
+
+
+def sync_ensure_open_shift_index() -> None:
+    """对已存在的数据卷幂等补建「每窑至多一条空峰值班次」的部分唯一索引。"""
+    ddl = (
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_burn_shift_open_per_clamp "
+        "ON burn_shifts (clamp_id) WHERE peak_temp_c IS NULL"
+    )
+    with sync_engine.begin() as conn:
+        conn.execute(text(ddl))
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

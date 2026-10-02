@@ -118,9 +118,39 @@ body {
   box-shadow: 0 0 0 1px rgba(224, 122, 47, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
-.kiln-svg { color: #8a7a68; display: grid; place-items: center; }
+.kiln-svg { color: #8a7a68; display: grid; place-items: center; position: relative; }
 .kiln-chip.is-active .kiln-svg,
 .kiln-chip.status-burning .kiln-svg { color: var(--ember); }
+
+/* 窑剪影班次角标：数值 = 库内该窑 burn_shifts 行数（与时间轴卡片张数同源） */
+.kiln-count-badge {
+  position: absolute;
+  top: -4px;
+  right: -8px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--ember);
+  color: #1c1208;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  border: 1px solid #15120f;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+.kiln-chip.is-active .kiln-count-badge,
+.kiln-chip.status-burning .kiln-count-badge {
+  background: #fb923c;
+}
+
+.kiln-chip.status-drawn .kiln-count-badge {
+  background: #57534e;
+  color: #e7e5e4;
+}
 
 .kiln-body { fill: currentColor; opacity: 0.45; }
 .kiln-mouth { fill: none; stroke: currentColor; stroke-width: 2; }

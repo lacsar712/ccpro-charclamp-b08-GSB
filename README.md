@@ -36,9 +36,15 @@
 
 ## 业务规则
 
-炭窑状态不可设为「已出炭」（`drawn`），除非该窑**最近一条** `BurnShift` 的 `peakTempC` 已记录且 **≥ 400℃**。
+1. 炭窑状态不可设为「已出炭」（`drawn`），除非该窑**最近一条** `BurnShift` 的 `peakTempC` 已记录且 **≥ 400℃**。
+2. **一口窑同时最多一条峰值为空（未测峰值）的焖烧班次**：该窑已有 `peak_temp_c IS NULL` 的班次时，再开新班服务端直接挡下并返回中文提示。
+   - 并发由两层保证：开班事务先 `SELECT … FOR UPDATE` 锁该窑行串行化校验；数据库另有**部分唯一索引**
+     `CREATE UNIQUE INDEX uq_burn_shift_open_per_clamp ON burn_shifts (clamp_id) WHERE peak_temp_c IS NULL` 兜底。
+   - 因此两人几乎同时再开同窑未测班时，**只许一笔入库，另一笔整笔回滚（无半插入）**，不依赖任何浏览器端加锁。
+3. 窑剪影角标 = 库内该窑 `burn_shifts` 行数，与筛选后时间轴卡片张数同源一致。
 
-规则实现：`src/charclamp/domain/rules.py`
+规则实现：`src/charclamp/domain/rules.py`；事务实现：`src/charclamp/web/controllers.py` 的 `POST /shifts/new`。
+本地验证（含并发双请求只入一笔）：`PYTHONPATH=src python tests/verify_mutex.py`（使用 SQLite，部分唯一索引两方言行为一致）。
 
 ## 快速启动
 

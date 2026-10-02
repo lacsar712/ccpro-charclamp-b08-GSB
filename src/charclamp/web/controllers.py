@@ -8,10 +8,16 @@ from litestar.enums import RequestEncodingType
 from litestar.params import Body
 from litestar.response import Redirect, Template
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from charclamp.domain.models import BurnShift, Clamp, User
-from charclamp.domain.rules import RuleError, assert_can_set_clamp_status, can_mark_clamp_drawn
+from charclamp.domain.rules import (
+    RuleError,
+    assert_can_open_shift,
+    assert_can_set_clamp_status,
+    can_mark_clamp_drawn,
+)
 from charclamp.infra.db import SessionLocal
 from charclamp.infra.security import verify_password
 
@@ -69,9 +75,12 @@ async def _load_timeline_context(clamp_id: int | None = None) -> dict[str, Any]:
             query = query.where(BurnShift.clamp_id == clamp_id)
         shifts = list((await db.execute(query)).scalars().all())
         site_name = clamps[0].site.name if clamps else "乌石岗焖烧坞"
+    # 剪影角标口径：库内每窑 burn_shifts 行数；总数与之同源，保证三处一致。
+    shift_total = sum(len(clamp.shifts) for clamp in clamps)
     return {
         "clamps": clamps,
         "shifts": shifts,
+        "shift_total": shift_total,
         "active_clamp_id": clamp_id,
         "status_labels": STATUS_LABELS,
         "site_name": site_name,
@@ -207,21 +216,45 @@ class ShiftController(Controller):
         peak_raw = (data.get("peak_temp_c") or "").strip()
         peak = float(peak_raw) if peak_raw else None
         clamp_id = int(data["clamp_id"])
-        async with SessionLocal() as db:
-            shift = BurnShift(
-                clamp_id=clamp_id,
-                started_at=started_at,
-                peak_temp_c=peak,
-                charcoal_grade=(data.get("charcoal_grade") or "B").strip(),
-                notes=(data.get("notes") or "").strip(),
+        # 同一事务内：先行锁该窑 → 加载既有班次 → 领域规则校验 → 插入并提交。
+        # 行锁让两人并发再开同窑时串行化；数据库部分唯一索引再兜底，
+        # 因此并发下只许一笔入库，另一笔整笔回滚（无半插入）并给中文提示。
+        try:
+            async with SessionLocal() as db:
+                result = await db.execute(
+                    select(Clamp)
+                    .where(Clamp.id == clamp_id)
+                    .with_for_update()
+                    .options(selectinload(Clamp.shifts))
+                )
+                clamp = result.scalar_one_or_none()
+                if clamp is None:
+                    _set_flash(request, "所选炭窑不存在，班次未登记", "error")
+                    return Redirect("/")
+                assert_can_open_shift(clamp)
+                shift = BurnShift(
+                    clamp_id=clamp_id,
+                    started_at=started_at,
+                    peak_temp_c=peak,
+                    charcoal_grade=(data.get("charcoal_grade") or "B").strip(),
+                    notes=(data.get("notes") or "").strip(),
+                )
+                db.add(shift)
+                if clamp.status == Clamp.STATUS_STACKED:
+                    clamp.status = Clamp.STATUS_BURNING
+                await db.commit()
+        except RuleError as exc:
+            _set_flash(request, str(exc), "error")
+            return Redirect(f"/?clamp_id={clamp_id}")
+        except IntegrityError:
+            # 并发兜底：另一笔已经占住该窑唯一的「空峰值」名额。
+            _set_flash(
+                request,
+                "该窑已有一条峰值未测的焖烧班次，并发再开已被挡下；"
+                "请先补测在烧班次的峰值温度后再开新班。",
+                "error",
             )
-            db.add(shift)
-            clamp = (
-                await db.execute(select(Clamp).where(Clamp.id == clamp_id))
-            ).scalar_one_or_none()
-            if clamp and clamp.status == Clamp.STATUS_STACKED:
-                clamp.status = Clamp.STATUS_BURNING
-            await db.commit()
+            return Redirect(f"/?clamp_id={clamp_id}")
         _set_flash(request, "焖烧班次已登记", "ok")
         return Redirect(f"/?clamp_id={clamp_id}")
 

@@ -12,10 +12,11 @@
     </span>
     <span class="kiln-meta">
       <strong>全部窑</strong>
-      <em>时间轴总览</em>
+      <em>时间轴总览 · 共 {{ shift_total }} 班</em>
     </span>
   </a>
   {% for clamp in clamps %}
+  {% set shift_count = clamp.shifts | length %}
   <a
     class="kiln-chip status-{{ clamp.status }} {% if active_clamp_id == clamp.id %}is-active{% endif %}"
     href="/?clamp_id={{ clamp.id }}"
@@ -23,7 +24,7 @@
     hx-target="#board"
     hx-swap="innerHTML"
     hx-push-url="/?clamp_id={{ clamp.id }}"
-    title="{{ status_labels.get(clamp.status, clamp.status) }}"
+    title="{{ status_labels.get(clamp.status, clamp.status) }} · 累计 {{ shift_count }} 个焖烧班次"
   >
     <span class="kiln-svg" aria-hidden="true">
       <svg viewBox="0 0 48 56" width="44" height="50">
@@ -32,10 +33,11 @@
         <circle class="kiln-glow" cx="24" cy="34" r="4" />
         <text x="24" y="14" text-anchor="middle" class="kiln-code-svg">{{ clamp.code[-1] }}</text>
       </svg>
+      <span class="kiln-count-badge" aria-label="该窑累计 {{ shift_count }} 个班次">{{ shift_count }}</span>
     </span>
     <span class="kiln-meta">
       <strong>{{ clamp.code }}</strong>
-      <em>{{ status_labels.get(clamp.status, clamp.status) }} · {{ clamp.wood_species or '—' }}</em>
+      <em>{{ status_labels.get(clamp.status, clamp.status) }} · {{ clamp.wood_species or '—' }} · {{ shift_count }} 班</em>
     </span>
   </a>
   {% endfor %}
