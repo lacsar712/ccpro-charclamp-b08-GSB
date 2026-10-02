@@ -8,6 +8,7 @@ from litestar.enums import RequestEncodingType
 from litestar.params import Body
 from litestar.response import Redirect, Template
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from charclamp.domain.models import BurnShift, Clamp, User
@@ -154,12 +155,29 @@ class TimelineController(Controller):
             return Redirect("/login")
         clamp_id = _parse_optional_int(request.query_params.get("clamp_id"))
         async with SessionLocal() as db:
-            clamps = list((await db.execute(select(Clamp).order_by(Clamp.code))).scalars().all())
+            clamps = list(
+                (
+                    await db.execute(
+                        select(Clamp)
+                        .options(selectinload(Clamp.shifts))
+                        .order_by(Clamp.code)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        # 浏览器侧提示用：这些窑已存在峰值未测的焖烧班次，再开会被服务端挡下。
+        open_clamp_ids = {
+            clamp.id
+            for clamp in clamps
+            if any(shift.peak_temp_c is None for shift in clamp.shifts)
+        }
         return Template(
             template_name="partials/drawer_shift.html",
             context={
                 "clamps": clamps,
                 "preselect_clamp_id": clamp_id,
+                "open_clamp_ids": open_clamp_ids,
                 "user": request.user,
             },
         )
@@ -206,22 +224,63 @@ class ShiftController(Controller):
         started_at = datetime.fromisoformat(started_raw) if started_raw else datetime.utcnow()
         peak_raw = (data.get("peak_temp_c") or "").strip()
         peak = float(peak_raw) if peak_raw else None
+        grade = (data.get("charcoal_grade") or "B").strip()
+        notes = (data.get("notes") or "").strip()
         clamp_id = int(data["clamp_id"])
         async with SessionLocal() as db:
+            clamp = (
+                await db.execute(select(Clamp).where(Clamp.id == clamp_id))
+            ).scalar_one_or_none()
+            if clamp is None:
+                _set_flash(request, "所选炭窑不存在，班次未登记", "error")
+                return Redirect(f"/?clamp_id={clamp_id}")
+            clamp_code = clamp.code
+
+            # 前置友好校验：该窑已有峰值为空（焖烧中、尚未测峰）的班次时，再开须挡下。
+            if peak is None:
+                open_shift = (
+                    await db.execute(
+                        select(BurnShift.id)
+                        .where(
+                            BurnShift.clamp_id == clamp_id,
+                            BurnShift.peak_temp_c.is_(None),
+                        )
+                        .limit(1)
+                    )
+                ).first()
+                if open_shift is not None:
+                    _set_flash(
+                        request,
+                        f"窑 {clamp_code} 已有一条峰值未测的焖烧班次，须先补记其峰值温度，"
+                        "才能再开新的焖烧班次",
+                        "error",
+                    )
+                    return Redirect(f"/?clamp_id={clamp_id}")
+
             shift = BurnShift(
                 clamp_id=clamp_id,
                 started_at=started_at,
                 peak_temp_c=peak,
-                charcoal_grade=(data.get("charcoal_grade") or "B").strip(),
-                notes=(data.get("notes") or "").strip(),
+                charcoal_grade=grade,
+                notes=notes,
             )
             db.add(shift)
-            clamp = (
-                await db.execute(select(Clamp).where(Clamp.id == clamp_id))
-            ).scalar_one_or_none()
-            if clamp and clamp.status == Clamp.STATUS_STACKED:
+            if clamp.status == Clamp.STATUS_STACKED:
                 clamp.status = Clamp.STATUS_BURNING
-            await db.commit()
+            try:
+                await db.commit()
+            except IntegrityError:
+                # 并发兜底：两人几乎同时为同一窑再开空峰值班次时，部分唯一索引
+                # 只放行一笔；本笔整体回滚（含窑态变更），绝不产生半插入。
+                # 注意回滚后 clamp 已过期，不能再访问其 ORM 属性，否则触发同步 IO。
+                await db.rollback()
+                _set_flash(
+                    request,
+                    f"窑 {clamp_code} 已有人先登记了一条峰值未测的焖烧班次，"
+                    "本次再开被挡下，请刷新时间轴后重试",
+                    "error",
+                )
+                return Redirect(f"/?clamp_id={clamp_id}")
         _set_flash(request, "焖烧班次已登记", "ok")
         return Redirect(f"/?clamp_id={clamp_id}")
 

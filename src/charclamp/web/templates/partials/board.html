@@ -16,6 +16,8 @@
     </span>
   </a>
   {% for clamp in clamps %}
+  {% set shift_count = clamp.shifts | length %}
+  {% set has_open_shift = clamp.shifts | selectattr('peak_temp_c', 'none') | list | length > 0 %}
   <a
     class="kiln-chip status-{{ clamp.status }} {% if active_clamp_id == clamp.id %}is-active{% endif %}"
     href="/?clamp_id={{ clamp.id }}"
@@ -23,7 +25,7 @@
     hx-target="#board"
     hx-swap="innerHTML"
     hx-push-url="/?clamp_id={{ clamp.id }}"
-    title="{{ status_labels.get(clamp.status, clamp.status) }}"
+    title="{{ status_labels.get(clamp.status, clamp.status) }} · 库内班次 {{ shift_count }} 条"
   >
     <span class="kiln-svg" aria-hidden="true">
       <svg viewBox="0 0 48 56" width="44" height="50">
@@ -37,6 +39,11 @@
       <strong>{{ clamp.code }}</strong>
       <em>{{ status_labels.get(clamp.status, clamp.status) }} · {{ clamp.wood_species or '—' }}</em>
     </span>
+    <span
+      class="kiln-count {% if has_open_shift %}has-open{% endif %}"
+      data-clamp-id="{{ clamp.id }}"
+      title="库内焖烧班次 {{ shift_count }} 条{% if has_open_shift %}（含峰值未测在焖班次）{% endif %}"
+    >{{ shift_count }} 班</span>
   </a>
   {% endfor %}
 </section>
@@ -46,15 +53,28 @@
     <h1>焖烧时间轴</h1>
     <p>点击上方窑剪影筛选班次；登记与出炭在侧抽屉完成，不另开列表页。</p>
   </div>
-  {% if active_clamp_id %}
-  <button
-    type="button"
-    class="btn ghost"
-    hx-get="/drawer/clamp/{{ active_clamp_id }}"
-    hx-target="#drawer-root"
-    hx-swap="innerHTML"
-  >操作当前窑</button>
-  {% endif %}
+  <div class="timeline-stats">
+    <span class="stat-chip">
+      班次卡片 <strong id="shift-card-count">{{ shifts | length }}</strong> 张
+    </span>
+    {% if active_clamp_id %}
+    {% set active = clamps | selectattr('id', 'equalto', active_clamp_id) | first %}
+    {% if active %}
+    <span class="stat-chip">
+      库内 <strong>{{ active.shifts | length }}</strong> 条
+    </span>
+    {% endif %}
+    {% endif %}
+    {% if active_clamp_id %}
+    <button
+      type="button"
+      class="btn ghost"
+      hx-get="/drawer/clamp/{{ active_clamp_id }}"
+      hx-target="#drawer-root"
+      hx-swap="innerHTML"
+    >操作当前窑</button>
+    {% endif %}
+  </div>
 </header>
 
 {% include "partials/timeline_feed.html" %}

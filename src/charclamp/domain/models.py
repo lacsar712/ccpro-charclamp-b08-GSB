@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -58,6 +68,17 @@ class Clamp(Base):
 
 class BurnShift(Base):
     __tablename__ = "burn_shifts"
+    __table_args__ = (
+        # 业务硬约束：同一口窑至多一条峰值温度仍为空（焖烧中未测峰）的班次。
+        # 仅约束 peak_temp_c IS NULL 的行，因此已测峰历史班次可任意多条。
+        # 并发双开由该部分唯一索引在库内核裁决：只许一笔入库，另一笔 IntegrityError。
+        Index(
+            "uq_burn_shift_one_open_per_clamp",
+            "clamp_id",
+            unique=True,
+            postgresql_where=text("peak_temp_c IS NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     clamp_id: Mapped[int] = mapped_column(ForeignKey("clamps.id"), nullable=False)

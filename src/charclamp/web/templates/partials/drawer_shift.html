@@ -3,11 +3,16 @@
     <h2>登记焖烧班次</h2>
     <button type="button" class="icon-close" onclick="closeDrawer()" aria-label="关闭">×</button>
   </header>
-  <form class="drawer-body" method="post" action="/shifts/new">
+  <form class="drawer-body" method="post" action="/shifts/new" id="shift-new-form">
     <label>炭窑
-      <select name="clamp_id" required>
+      <select name="clamp_id" id="shift-clamp-select" required>
         {% for clamp in clamps %}
-        <option value="{{ clamp.id }}" {% if preselect_clamp_id == clamp.id %}selected{% endif %}>{{ clamp.code }}</option>
+        <option
+          value="{{ clamp.id }}"
+          {% if preselect_clamp_id == clamp.id %}selected{% endif %}
+          data-shift-count="{{ clamp.shifts | length }}"
+          {% if clamp.id in open_clamp_ids %}data-open="1"{% endif %}
+        >{{ clamp.code }}（库内 {{ clamp.shifts | length }} 班{% if clamp.id in open_clamp_ids %}·峰值未测在焖{% endif %}）</option>
         {% endfor %}
       </select>
     </label>
@@ -15,7 +20,7 @@
       <input name="started_at" type="datetime-local" />
     </label>
     <label>峰值温度 ℃（可空）
-      <input name="peak_temp_c" type="number" step="0.1" />
+      <input name="peak_temp_c" type="number" step="0.1" id="shift-peak-input" />
     </label>
     <label>炭品等级
       <input name="charcoal_grade" value="B" />
@@ -23,10 +28,52 @@
     <label>备注
       <textarea name="notes" rows="3"></textarea>
     </label>
-    <p class="hint">出炭要求最近班次峰值 ≥ 400℃；本表只登记班次。</p>
+    <p class="hint" id="shift-rule-hint">一口窑同时最多一条峰值为空的焖烧班次；该窑无在焖空峰值班次时可留空峰值开新班。</p>
     <div class="actions">
-      <button type="submit">写入时间轴</button>
+      <button type="submit" id="shift-submit-btn">写入时间轴</button>
       <button type="button" class="btn ghost" onclick="closeDrawer()">取消</button>
     </div>
   </form>
+  <script>
+    (function () {
+      var form = document.getElementById('shift-new-form');
+      var select = document.getElementById('shift-clamp-select');
+      var peak = document.getElementById('shift-peak-input');
+      var btn = document.getElementById('shift-submit-btn');
+      var hint = document.getElementById('shift-rule-hint');
+      function blocked() {
+        var opt = select.options[select.selectedIndex];
+        var hasOpen = opt && opt.dataset.open === '1';
+        var peakEmpty = peak.value.trim() === '';
+        // 只在「该窑已有空峰值在焖班」且「本笔峰值也留空」时挡；填了峰值允许登记。
+        return hasOpen && peakEmpty;
+      }
+      function refresh() {
+        if (blocked()) {
+          // 仅浏览器侧前置提示：该窑已有峰值未测的在焖班次，须先补记峰值。
+          // 真正裁决在服务端 + 库内部分唯一索引。
+          btn.disabled = true;
+          btn.classList.add('is-disabled');
+          hint.classList.add('warn');
+          hint.textContent = '该窑已有一条峰值未测的在焖班次；新班峰值若仍留空将与它撞班。请先为在焖班次补记峰值，或给本班填写峰值温度。';
+        } else {
+          btn.disabled = false;
+          btn.classList.remove('is-disabled');
+          hint.classList.remove('warn');
+          hint.textContent = '一口窑同时最多一条峰值为空的焖烧班次；该窑无在焖空峰值班次时可留空峰值开新班。';
+        }
+      }
+      select.addEventListener('change', refresh);
+      peak.addEventListener('input', refresh);
+      refresh();
+      // 防止同一页面连点产生重复提交（并发双开由库内唯一索引最终裁决）。
+      form.addEventListener('submit', function () {
+        if (blocked()) {
+          return false;
+        }
+        btn.disabled = true;
+        btn.classList.add('is-disabled');
+      });
+    })();
+  </script>
 </aside>

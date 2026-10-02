@@ -144,6 +144,62 @@ body {
   color: var(--muted);
 }
 
+/* 窑剪影班次角标：数字 = 库内该窑 burn_shifts 行数 */
+.kiln-chip { position: relative; }
+
+.kiln-count {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  min-width: 30px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+  color: #e7d9c6;
+  background: #2b241d;
+  border: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
+.kiln-count.has-open {
+  color: #ffedd5;
+  background: rgba(224, 122, 47, 0.22);
+  border-color: rgba(224, 122, 47, 0.55);
+  box-shadow: 0 0 10px rgba(224, 122, 47, 0.25);
+}
+
+/* 时间轴头部统计：卡片张数 / 库内条数 */
+.timeline-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #1d1813;
+  color: var(--muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.stat-chip strong {
+  color: #ffedd5;
+  font-variant-numeric: tabular-nums;
+}
+
+.drawer-count { color: #ffedd5; font-variant-numeric: tabular-nums; }
+.open-flag { color: #fca5a5; }
+
 .timeline-head {
   display: flex;
   align-items: flex-end;

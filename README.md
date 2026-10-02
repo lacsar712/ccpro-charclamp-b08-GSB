@@ -36,9 +36,14 @@
 
 ## 业务规则
 
-炭窑状态不可设为「已出炭」（`drawn`），除非该窑**最近一条** `BurnShift` 的 `peakTempC` 已记录且 **≥ 400℃**。
+1. 炭窑状态不可设为「已出炭」（`drawn`），除非该窑**最近一条** `BurnShift` 的 `peakTempC` 已记录且 **≥ 400℃**。
+2. **一口窑同时最多一条峰值为空（焖烧中、尚未测峰）的班次。** 该窑已存在空峰值班次时再开新班须挡下，直到在焖班次补记峰值。
 
-规则实现：`src/charclamp/domain/rules.py`
+规则 2 的并发由数据库**部分唯一索引**裁决（`burn_shifts (clamp_id) WHERE peak_temp_c IS NULL`）：两人几乎同时为同一窑再开空峰值未测班次时，只许一笔入库，另一笔整事务回滚并以中文提示挡下，绝不产生半插入（含窑态 `stacked → burning` 的联动也随败者回滚）。应用层在提交前另有一次库内存在性校验提供友好提示，但最终以库内索引为准；浏览器抽屉仅作前置提示，不是安全边界。
+
+窑剪影角标、时间轴「班次卡片 N 张」、窑抽屉「库内班次」三处计数一致，均等于库内该窑 `burn_shifts` 行数；角标对含空峰值在焖班次的窑高亮。
+
+规则实现：`src/charclamp/domain/rules.py`（出炭规则）、`src/charclamp/domain/models.py` + `src/charclamp/infra/db.py`（部分唯一索引）、`src/charclamp/web/controllers.py`（登记校验与并发兜底）。
 
 ## 快速启动
 

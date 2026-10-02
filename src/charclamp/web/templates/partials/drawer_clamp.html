@@ -4,9 +4,15 @@
     <button type="button" class="icon-close" onclick="closeDrawer()" aria-label="关闭">×</button>
   </header>
   <div class="drawer-body">
+    {% set shift_count = clamp.shifts | length %}
+    {% set has_open_shift = clamp.shifts | selectattr('peak_temp_c', 'none') | list | length > 0 %}
     <p class="drawer-lead">
       {{ clamp.site.name }} · {{ clamp.wood_species or '材种未填' }}
       · 当前 <span class="badge badge-{{ clamp.status }}">{{ status_labels.get(clamp.status, clamp.status) }}</span>
+    </p>
+    <p class="hint">
+      库内焖烧班次 <strong class="drawer-count">{{ shift_count }}</strong> 条
+      {% if has_open_shift %}<span class="open-flag">· 其中有峰值未测的在焖班次，再开新班将被挡下</span>{% endif %}
     </p>
     {% if clamp.notes %}
     <p class="hint">{{ clamp.notes }}</p>
